@@ -12,34 +12,30 @@ from threading import Thread
 import phonenumbers
 from phonenumbers import geocoder
 
-# ================== الإعدادات ==================
+# ================== الإعدادات الأساسية ==================
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8744522940:AAG2BnKHqUZZqbJQooy7hY2Hvm2YVNFnRGE")
-MAIN_ADMIN_ID = 2017794875
-MAIN_ADMIN_USERNAME = "hagouc" # بدون @
-OTP_GROUP_ID = -1003953419808 
 THIRDWAVE_API_KEY = os.getenv("THIRDWAVE_API_KEY", "tw_zoyS-liK1zcUTVmg_c5oSx9MdBNSCMwke3eG70goCW0")
+MAIN_ADMIN_ID = 2017794875
+MAIN_ADMIN_USERNAME = "hagouc"
+OTP_GROUP_ID = -1003953419808
+SUBSCRIPTION_PRICE = 10.0
+SUBSCRIPTION_DAYS = 30
 
-SUBSCRIBERS_FILE = "subscribers.json"
+# ================== الملفات ==================
 USERS_FILE = "users.json"
 COUNTRIES_FILE = "countries.json"
-SETTINGS_FILE = "settings.json"
-ADMINS_FILE = "admins.json"
-REQUESTS_FILE = "withdrawal_requests.json"
-
-SUBSCRIPTION_PRICE = 10.0 # السعر بالدولار
-SUBSCRIPTION_DAYS = 30 # مدة الاشتراك
+SUBSCRIBERS_FILE = "subscribers.json"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 user_states = {}
 
-# ================== تحميل وحفظ البيانات ==================
+# ================== إدارة البيانات ==================
 def load_json(file, default):
     if os.path.exists(file):
         try:
             with open(file, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except:
-            pass
+        except: pass
     return default
 
 def save_json(file, data):
@@ -49,12 +45,10 @@ def save_json(file, data):
 USERS = load_json(USERS_FILE, {})
 COUNTRIES = load_json(COUNTRIES_FILE, {})
 SUBSCRIBERS = load_json(SUBSCRIBERS_FILE, {})
-ADMINS = load_json(ADMINS_FILE, [MAIN_ADMIN_ID])
-WITHDRAWALS = load_json(REQUESTS_FILE, [])
 
 # ================== دوال مساعدة ==================
 def is_admin(user_id):
-    return user_id in ADMINS or user_id == MAIN_ADMIN_ID
+    return user_id == MAIN_ADMIN_ID
 
 def clean_number(num):
     return re.sub(r'\D', '', str(num))
@@ -62,54 +56,50 @@ def clean_number(num):
 def detect_country(number):
     try:
         s = str(number).strip()
-        if not s.startswith('+'):
-            s = '+' + s
+        if not s.startswith('+'): s = '+' + s
         parsed = phonenumbers.parse(s)
         region = phonenumbers.region_code_for_number(parsed)
-        if not region:
-            return "Unknown", "🌍"
+        if not region: return "Unknown", "🌍"
         name = geocoder.description_for_number(parsed, "en")
         flag = ''.join([chr(0x1F1E6 + ord(c) - ord('A')) for c in region])
         return name or region, flag
-    except:
-        return "Unknown", "🌍"
+    except: return "Unknown", "🌍"
 
 def extract_otp(text):
-    if not text:
-        return "----"
+    if not text: return "----"
     patterns = [
         r'(?:code|كود|رمز|verification|OTP|otp)[:\s]*(\d{4,8})',
-        r'\b(\d{6})\b',
-        r'\b(\d{5})\b',
-        r'\b(\d{4})\b'
+        r'\b(\d{6})\b', r'\b(\d{5})\b', r'\b(\d{4})\b'
     ]
     for p in patterns:
         m = re.search(p, text, re.IGNORECASE)
-        if m:
-            return m.group(1)
+        if m: return m.group(1)
     return "----"
 
 def detect_service(text, sender=""):
     t = (str(text) + " " + str(sender)).lower()
     services = {
-        "whatsapp": ("WS", "5188683998125106802"),
-        "واتساب": ("WS", "5188683998125106802"),
-        "telegram": ("TG", "5471949924658588235"),
-        "تيليجرام": ("TG", "5471949924658588235"),
-        "facebook": ("FB", "5323261730283863478"),
-        "فيسبوك": ("FB", "5323261730283863478"),
-        "instagram": ("IG", "5319160079465857105"),
-        "انستقرام": ("IG", "5319160079465857105"),
-        "google": ("GG", "5359758030198031389"),
-        "جوجل": ("GG", "5359758030198031389"),
-        "tiktok": ("TT", "5327982530702359565"),
+        "whatsapp": ("WS", "5188683998125106802"), "واتساب": ("WS", "5188683998125106802"),
+        "telegram": ("TG", "5471949924658588235"), "تيليجرام": ("TG", "5471949924658588235"),
+        "facebook": ("FB", "5323261730283863478"), "فيسبوك": ("FB", "5323261730283863478"),
+        "instagram": ("IG", "5319160079465857105"), "انستقرام": ("IG", "5319160079465857105"),
+        "google": ("GG", "5359758030198031389"), "جوجل": ("GG", "5359758030198031389"),
+        "tiktok": ("TT", "5327982530702359565")
     }
     for key, (label, eid) in services.items():
-        if key in t:
-            return label, eid
+        if key in t: return label, eid
     return "OTP", "5334998226636390258"
 
-# ================== أوامر البوت ==================
+def check_subscription(user_id):
+    user_str = str(user_id)
+    if user_str not in SUBSCRIBERS:
+        return False, "not_subscribed"
+    end_date = datetime.strptime(SUBSCRIBERS[user_str]["end_date"], "%Y-%m-%d %H:%M:%S")
+    if end_date < datetime.now():
+        return False, "expired"
+    return True, "active"
+    
+    # ================== أوامر البوت للمستخدم ==================
 @bot.message_handler(commands=['start'])
 def start(msg):
     user_id = msg.from_user.id
@@ -118,7 +108,6 @@ def start(msg):
         "activations": 0,
         "selected_country": None,
         "selected_numbers": [],
-        "balance": 0.0,
         "username": msg.from_user.username or "",
         "first_name": msg.from_user.first_name or ""
     })
@@ -129,27 +118,12 @@ def start(msg):
     markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     btn1 = KeyboardButton("📲 احصل على رقم", style="primary")
     btn2 = KeyboardButton("📊 إحصائياتي", style="success")
-    btn3 = KeyboardButton("💰 رصيدي", style="primary")
-    btn4 = KeyboardButton("💸 سحب الرصيد", style="danger")
     markup.row(btn1, btn2)
-    markup.row(btn3, btn4)
     
     if is_admin(user_id):
         markup.add(KeyboardButton("⚙️ لوحة الإدارة", style="primary"))
     
     bot.send_message(msg.chat.id, f"أهلاً بك يا {msg.from_user.first_name}!\nاختر من الأزرار بالأسفل 👇", reply_markup=markup)
-
-# ================== التحقق من الاشتراك ==================
-def check_subscription(user_id):
-    user_str = str(user_id)
-    if user_str not in SUBSCRIBERS:
-        return False, "not_subscribed"
-    
-    end_date = datetime.strptime(SUBSCRIBERS[user_str]["end_date"], "%Y-%m-%d %H:%M:%S")
-    if end_date < datetime.now():
-        return False, "expired"
-    
-    return True, "active"
 
 @bot.message_handler(func=lambda m: m.text == "📲 احصل على رقم")
 def get_number(msg):
@@ -243,8 +217,7 @@ def change_numbers(call):
     
     old = USERS[user_id].get("selected_numbers", [])
     avail = [n for n in nums if n not in old]
-    if not avail:
-        avail = nums
+    if not avail: avail = nums
         
     picked = random.sample(avail, min(4, len(avail)))
     USERS[user_id]["selected_numbers"] = picked
@@ -269,49 +242,20 @@ def change_numbers(call):
 def stats(msg):
     user_id = str(msg.from_user.id)
     u = USERS.get(user_id, {})
+    
+    sub_txt = "❌ غير مشترك"
+    if user_id in SUBSCRIBERS:
+        end = SUBSCRIBERS[user_id]["end_date"]
+        sub_txt = f"✅ ينتهي في: {end}"
+        
     txt = (
         f"👤 إحصائياتك:\n\n"
         f"📅 تاريخ الانضمام: {u.get('join_date', 'N/A')}\n"
-        f"📊 عدد الأكواد: {u.get('activations', 0)}\n"
-        f"💰 رصيدك: ${u.get('balance', 0.0):.3f}"
+        f"📊 عدد الأكواد المستلمة: {u.get('activations', 0)}\n"
+        f"💳 الاشتراك: {sub_txt}"
     )
     bot.reply_to(msg, txt)
-
-@bot.message_handler(func=lambda m: m.text == "💰 رصيدي")
-def balance(msg):
-    user_id = str(msg.from_user.id)
-    u = USERS.get(user_id, {})
-    bot.reply_to(msg, f"💰 رصيدك الحالي: ${u.get('balance', 0.0):.3f}")
-
-@bot.message_handler(func=lambda m: m.text == "💸 سحب الرصيد")
-def withdraw(msg):
-    user_id = str(msg.from_user.id)
-    u = USERS.get(user_id, {})
-    bal = u.get('balance', 0.0)
-    if bal < 1.0:
-        bot.reply_to(msg, "❌ الحد الأدنى للسحب هو $1.0")
-        return
-    
-    req_id = str(uuid.uuid4())[:8]
-    WITHDRAWALS.append({
-        "id": req_id,
-        "user_id": user_id,
-        "amount": bal,
-        "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "status": "pending"
-    })
-    save_json(REQUESTS_FILE, WITHDRAWALS)
-    USERS[user_id]["balance"] = 0.0
-    save_json(USERS_FILE, USERS)
-    
-    bot.reply_to(msg, f"✅ تم إرسال طلب السحب!\n💵 المبلغ: ${bal:.3f}\n🆔 الطلب: {req_id}")
-    
-    try:
-        bot.send_message(MAIN_ADMIN_ID, f"💸 طلب سحب جديد!\n👤 المستخدم: `{user_id}`\n💵 المبلغ: ${bal:.3f}")
-    except:
-        pass
-
-# ================== لوحة الإدارة ==================
+    # ================== لوحة الإدارة والاشتراكات ==================
 @bot.message_handler(func=lambda m: m.text == "⚙️ لوحة الإدارة" and is_admin(m.from_user.id))
 def admin_panel(msg):
     markup = InlineKeyboardMarkup(row_width=1)
@@ -325,8 +269,7 @@ def admin_panel(msg):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("admin_"))
 def admin_callbacks(call):
-    if not is_admin(call.from_user.id):
-        return
+    if not is_admin(call.from_user.id): return
     
     if call.data == "admin_add_country":
         bot.send_message(call.message.chat.id, "📄 أرسل ملف الأرقام (txt). كل سطر رقم.")
@@ -339,7 +282,7 @@ def admin_callbacks(call):
         bot.send_message(call.message.chat.id, txt or "❌ لا توجد دول مضافة.")
     
     elif call.data == "admin_stats":
-        bot.send_message(call.message.chat.id, f"👥 المستخدمين: {len(USERS)}\n🌍 الدول: {len(COUNTRIES)}")
+        bot.send_message(call.message.chat.id, f"👥 المستخدمين: {len(USERS)}\n🌍 الدول: {len(COUNTRIES)}\n💳 المشتركين: {len(SUBSCRIBERS)}")
 
     elif call.data == "admin_subs_menu":
         markup = InlineKeyboardMarkup(row_width=1)
@@ -374,8 +317,7 @@ def admin_callbacks(call):
                     txt += f"📎 User: @{uname}\n"
                     txt += f"📅 ينتهي: {data['end_date']}\n"
                     txt += f"-------------------\n"
-            except:
-                pass
+            except: pass
         if active == 0:
             txt += "لا يوجد مشتركين نشطين حالياً."
         bot.send_message(call.message.chat.id, txt, parse_mode="Markdown")
@@ -431,7 +373,6 @@ def handle_states(msg):
     if action == "give_sub_get_user":
         target = msg.text.strip().replace("@", "")
         target_id = None
-        
         if target.isdigit():
             target_id = target
         else:
@@ -455,16 +396,13 @@ def handle_states(msg):
         del user_states[msg.from_user.id]
         
         bot.reply_to(msg, f"✅ تم تفعيل الاشتراك للمستخدم `{target_id}` لمدة {SUBSCRIPTION_DAYS} يوم.\n📅 ينتهي في: {end_date}")
-        
         try:
             bot.send_message(int(target_id), f"🎉 تم تفعيل اشتراكك!\n📅 الاشتراك ساري حتى: {end_date}\n💰 السعر: {SUBSCRIPTION_PRICE}$ شهرياً")
-        except:
-            pass
+        except: pass
 
     elif action == "cancel_sub_get_user":
         target = msg.text.strip().replace("@", "")
         target_id = None
-        
         if target.isdigit():
             target_id = target
         else:
@@ -483,11 +421,9 @@ def handle_states(msg):
         del user_states[msg.from_user.id]
         
         bot.reply_to(msg, f"✅ تم إلغاء اشتراك المستخدم `{target_id}`.")
-        
         try:
             bot.send_message(int(target_id), "⚠️ تم إلغاء اشتراكك. للاشتراك مرة أخرى يرجى التواصل مع الأدمن.")
-        except:
-            pass
+        except: pass
 
 # ================== دالة مراقبة ThirdWave ==================
 last_seen_key = ""
@@ -521,9 +457,7 @@ def send_otp_to_users(number, sms_text, sender):
                     f"<tg-emoji emoji-id='{eid}'>{service}</tg-emoji>"
                 )
                 bot.send_message(int(uid), msg_text, parse_mode="HTML")
-                
                 USERS[uid]["activations"] = USERS[uid].get("activations", 0) + 1
-                USERS[uid]["balance"] = USERS[uid].get("balance", 0.0) + 0.002
                 
                 if matched_num in USERS[uid]["selected_numbers"]:
                     USERS[uid]["selected_numbers"].remove(matched_num)
@@ -537,12 +471,74 @@ def send_otp_to_users(number, sms_text, sender):
         print(f"✅ تم إرسال الكود لـ {sent} مستخدم: +{number} | OTP: {otp}")
     
     if OTP_GROUP_ID:
-        try:
-            bot.send_message(OTP_GROUP_ID, f"🔔 كود جديد\n📞 +{number}\n🔑 {otp}\n📨 {sender}")
-        except:
-            pass
+    try:
+        group_msg = (
+            f"🔔 **كود جديد وصل**\n\n"
+            f"🌍 الدولة: {country} {flag}\n"
+            f"📞 الرقم: `+{clean_number(number)}`\n"
+            f"🔑 الكود: `{otp}`\n"
+            f"📨 الخدمة: {sender}\n\n"
+            f"📝 **الرسالة كاملة:**\n{sms_text}"
+        )
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton(f"📋 نسخ الكود: {otp}", copy_text=CopyTextButton(text=otp)))
+        bot.send_message(OTP_GROUP_ID, group_msg, parse_mode="Markdown", reply_markup=markup)
+    except Exception as e:
+        print(f"Group send error: {e}")
+        
 
 def thirdwave_loop():
     global last_seen_key
     api_key = THIRDWAVE_API_KEY
-    api_url = "https://thirdwave.im/api/v1/traff
+    api_url = "https://thirdwave.im/api/v1/traffic"
+    
+    while True:
+        try:
+            r = requests.get(api_url, params={"api_key": api_key, "limit": 50}, timeout=30)
+            if r.status_code == 429:
+                print("⚠️ Rate limit, waiting 60s...")
+                time.sleep(60)
+                continue
+            
+            if r.status_code != 200:
+                time.sleep(10)
+                continue
+            
+            data = r.json()
+            items = data.get("items", [])
+            if not items:
+                time.sleep(5)
+                continue
+            
+            items.sort(key=lambda x: x.get("received_at", ""), reverse=True)
+            
+            for item in items:
+                date_str = item.get("received_at", "")
+                number = item.get("number", "")
+                sms = item.get("sms", "")
+                sender = item.get("sender_id", "")
+                
+                key = f"{date_str}_{number}"
+                if key == last_seen_key:
+                    break
+                
+                if not number or not sms:
+                    continue
+                
+                print(f"📨 OTP: {sms[:60]}... | {number}")
+                send_otp_to_users(number, sms, sender)
+                last_seen_key = key
+            
+            time.sleep(5)
+        except Exception as e:
+            print(f"❌ ThirdWave Error: {e}")
+            time.sleep(10)
+
+# ================== التشغيل ==================
+if __name__ == "__main__":
+    print("🚀 بدء البوت...")
+    thread = Thread(target=thirdwave_loop, daemon=True)
+    thread.start()
+    print("✅ ThirdWave Loop started!")
+    bot.infinity_polling()
+    
